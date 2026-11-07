@@ -1,0 +1,81 @@
+services:
+  # Nodo 1: nodo semilla del clúster
+  rabbit1:
+    image: rabbitmq:3.13-management
+    container_name: rabbit1
+    hostname: rabbit1
+    restart: always
+    ports:
+      - "5672:5672"     # AMQP
+      - "15672:15672"   # Management UI
+    environment:
+      RABBITMQ_ERLANG_COOKIE: "PEDIDOS360_CLUSTER_COOKIE"
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+    volumes:
+      - rabbit1_data:/var/lib/rabbitmq
+    networks:
+      - pedidos-net
+
+  # Nodo 2: se une automáticamente al clúster (rabbit@rabbit1)
+  rabbit2:
+    image: rabbitmq:3.13-management
+    container_name: rabbit2
+    hostname: rabbit2
+    restart: always
+    depends_on:
+      rabbit1:
+        condition: service_healthy
+    ports:
+      - "5673:5672"
+      - "15673:15672"
+    environment:
+      RABBITMQ_ERLANG_COOKIE: "PEDIDOS360_CLUSTER_COOKIE"
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+    volumes:
+      - rabbit2_data:/var/lib/rabbitmq
+    command: >
+      bash -c "rabbitmq-server -detached &&
+      sleep 15 &&
+      rabbitmqctl stop_app &&
+      rabbitmqctl join_cluster rabbit@rabbit1 &&
+      rabbitmqctl stop &&
+      sleep 3 &&
+      rabbitmq-server"
+    networks:
+      - pedidos-net
+
+  # Backend Spring Boot (pedidos360)
+  backend:
+    build: .
+    container_name: pedidos360-backend
+    restart: on-failure
+    depends_on:
+      rabbit1:
+        condition: service_healthy
+      rabbit2:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      RABBITMQ_ADDRESSES: "rabbit1:5672,rabbit2:5672"
+    networks:
+      - pedidos-net
+
+networks:
+  pedidos-net:
+
+volumes:
+  rabbit1_data:
+  rabbit2_data:

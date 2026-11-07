@@ -1,0 +1,111 @@
+### 1. Verificar lógica existente (TimeController intacto)
+GET http://localhost:8080/api/hora
+
+### 2. Estado del Microservicio Administrador de RabbitMQ
+GET http://localhost:8080/api/admin/status
+
+### 3. Admin: Crear una Cola dinámica (con configuración de DLQ)
+POST http://localhost:8080/api/admin/queues
+Content-Type: application/json
+
+{
+  "name": "cola.facturacion.express",
+  "durable": true,
+  "deadLetterExchange": "pedidos.dlx",
+  "deadLetterRoutingKey": "facturacion.express.dlq"
+}
+
+### 4. Admin: Crear un Exchange dinámico
+POST http://localhost:8080/api/admin/exchanges
+Content-Type: application/json
+
+{
+  "name": "exchange.facturacion",
+  "type": "direct",
+  "durable": true
+}
+
+### 5. Admin: Crear un Binding
+POST http://localhost:8080/api/admin/bindings
+Content-Type: application/json
+
+{
+  "queue": "cola.facturacion.express",
+  "exchange": "exchange.facturacion",
+  "routingKey": "factura.rapida"
+}
+
+### 6. Admin: Eliminar Binding
+DELETE http://localhost:8080/api/admin/bindings
+Content-Type: application/json
+
+{
+  "queue": "cola.facturacion.express",
+  "exchange": "exchange.facturacion",
+  "routingKey": "factura.rapida"
+}
+
+### 7. Admin: Eliminar Exchange
+DELETE http://localhost:8080/api/admin/exchanges/exchange.facturacion
+
+### 8. Admin: Eliminar Cola
+DELETE http://localhost:8080/api/admin/queues/cola.facturacion.express
+
+### ========================================================
+### MENSAJERÍA DESACOPLADA (ASÍNCRONA)
+### ========================================================
+
+### 9. Desacoplamiento total: Procesar un Pedido
+# Desencadena en background 3 tareas asíncronas: Notificación + Ticket + Documento
+POST http://localhost:8080/api/pedidos/procesar
+Content-Type: application/json
+
+{
+  "cliente": "Maria Gonzalez (maria@pedidos360.cl)",
+  "total": 35990
+}
+
+### 10. Enviar tarea asíncrona individual: Notificación
+POST http://localhost:8080/api/tareas/notificacion
+Content-Type: application/json
+
+{
+  "destinatario": "cliente@correo.cl",
+  "contenido": "Su pedido está en camino."
+}
+
+### 11. Enviar tarea asíncrona individual: Ticket
+POST http://localhost:8080/api/tareas/ticket
+Content-Type: application/json
+
+{
+  "destinatario": "cocina@pedidos360.com",
+  "contenido": "Preparar combo 2 con bebida grande."
+}
+
+### 12. Enviar tarea asíncrona individual: Documento
+POST http://localhost:8080/api/tareas/documento
+Content-Type: application/json
+
+{
+  "destinatario": "factura@empresa.cl",
+  "contenido": "Emisión de comprobante de pago electrónico."
+}
+
+### ========================================================
+### DEMOSTRACIÓN DE DEAD LETTER QUEUE (DLQ)
+### ========================================================
+
+### 13. Probar DLQ con fallo simulado en Notificaciones
+# El consumidor rechazará el mensaje y RabbitMQ lo derivará automáticamente a la DLQ
+POST http://localhost:8080/api/tareas/probar-dlq?tipo=notificacion
+
+### 14. Probar DLQ con fallo simulado en Tickets
+POST http://localhost:8080/api/tareas/probar-dlq?tipo=ticket
+
+### 15. Probar DLQ con fallo simulado en Documentos
+POST http://localhost:8080/api/tareas/probar-dlq?tipo=documento
+
+### 16. Consultar historial de tareas procesadas y tareas en DLQ
+GET http://localhost:8080/api/tareas/historial
+
